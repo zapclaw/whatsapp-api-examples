@@ -1,0 +1,2212 @@
+openapi: 3.0.3
+info:
+  title: ZapClaw API
+  version: 1.3.0
+  description: >
+    Public REST API for the ZapClaw WhatsApp gateway. Send WhatsApp text,
+    template, media, sticker, location, contacts, reaction and interactive
+    messages, show typing indicators, mark messages as read, quote messages
+    with replyTo, upload, download and delete media, manage message templates,
+    read and update the business profile, block users, manage QR codes,
+    configure conversational automation, and read message, number and pricing
+    analytics data. Inbound messages, delivery status updates, messages the
+    business sends from the WhatsApp Business app or WhatsApp Web (message.echo,
+    opt-in) and WABA account events are delivered to a webhook URL configured in
+    the ZapClaw dashboard.
+    See https://zapclaw.app/docs.html for the webhook payload format.
+
+
+    Webhook delivery: a failed delivery is retried 3 times (0s, 30s, 120s).
+    After 20 deliveries in a row have been given up on for the same webhook,
+    ZapClaw stops calling that endpoint, but keeps recording every event with
+    its full payload as a pending delivery, replayable from the dashboard, so
+    nothing is lost. Delivery resumes on the first attempt that succeeds.
+    Account events are delivered even while a webhook is in that state, and the
+    account owner is emailed once when it happens.
+
+
+    Free plan limit: above 500 messages a month, a free account keeps receiving
+    and storing messages, but its message events (message.received,
+    message.echo) are held instead of sent to the webhook. They are recorded
+    with their full payload, marked heldReason "plan_limit" in the dashboard's
+    delivery log, and a resend of one answers 402 held_by_plan_limit. Status
+    and account events are still delivered. Held messages are also left out of
+    GET /api/v1/send/messages. In the minutes after the account subscribes, the
+    last 48 hours are delivered on their own and older ones can be resent from
+    the dashboard. Paid plans are never held.
+
+
+    Coexistence limitations: numbers run in Meta Coexistence (Coex) mode.
+    Throughput is fixed at 20 messages per second regardless of messaging tier,
+    a Meta limit on Coexistence numbers that cannot be raised. Messages a business sends from WhatsApp for Windows or WearOS do not
+    generate webhooks (an unavoidable data gap). Voice/video calls, the
+    Official Business Account green badge (OBA), and ephemeral, view-once and
+    group messages are not supported.
+  contact:
+    name: ZapClaw
+    email: contato@zapclaw.app
+    url: https://zapclaw.app/docs.html
+
+servers:
+  - url: https://api.zapclaw.app
+    description: Production
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Messages
+    description: Send and read messages
+  - name: Numbers
+    description: Discover connected WhatsApp numbers
+  - name: Media
+    description: Upload, download and delete media files
+  - name: Templates
+    description: Read and manage message templates
+  - name: Profile
+    description: Read and update the WhatsApp business profile
+  - name: Block
+    description: Block, unblock and list blocked users
+  - name: QR Codes
+    description: Manage QR codes and managed links
+  - name: Automation
+    description: Configure conversational automation
+  - name: Analytics
+    description: Read pricing analytics
+
+paths:
+  /api/v1/send/text:
+    post:
+      tags: [Messages]
+      summary: Send a text message
+      operationId: sendText
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to, text]
+              properties:
+                from:
+                  type: string
+                  description: Sender number, a connected WhatsApp number, E.164 digits.
+                  example: "5511999999999"
+                to:
+                  type: string
+                  description: Recipient number, E.164 digits.
+                  example: "5511888888888"
+                text:
+                  type: string
+                  maxLength: 4096
+                  example: Hello from ZapClaw
+                previewUrl:
+                  type: boolean
+                  description: >
+                    When true, WhatsApp renders a link preview for the first
+                    URL found in `text`.
+                  default: false
+                replyTo:
+                  type: string
+                  description: >
+                    Optional wamid of a message to quote. The message is
+                    delivered as a quoted reply in WhatsApp.
+                  example: "wamid.HBg..."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: Message accepted and sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "202": { $ref: "#/components/responses/DeliveryIndeterminate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "422": { $ref: "#/components/responses/WindowClosed" }
+        "409": { $ref: "#/components/responses/IdempotencyInProgress" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/template:
+    post:
+      tags: [Messages]
+      summary: Send a template message
+      operationId: sendTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to, templateName]
+              properties:
+                from:
+                  type: string
+                  example: "5511999999999"
+                to:
+                  type: string
+                  example: "5511888888888"
+                templateName:
+                  type: string
+                  description: Name of an approved template.
+                  example: order_update
+                language:
+                  type: string
+                  description: Template language code.
+                  default: pt_BR
+                components:
+                  type: array
+                  description: Template components to fill variables (Meta format).
+                  items:
+                    type: object
+                replyTo:
+                  type: string
+                  description: >
+                    Optional wamid of a message to quote. The message is
+                    delivered as a quoted reply in WhatsApp.
+                  example: "wamid.HBg..."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: Message accepted and sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "202": { $ref: "#/components/responses/DeliveryIndeterminate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "409": { $ref: "#/components/responses/IdempotencyInProgress" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/media:
+    post:
+      tags: [Messages]
+      summary: Send a media message
+      operationId: sendMedia
+      description: >
+        Sends an image, video, document, audio or sticker message. The media is
+        referenced either by a public https URL (`link`) or by a `mediaId`
+        handle obtained from POST /api/v1/media. Provide exactly one of the two.
+        A sticker (`type: sticker`) must be a WebP image and does not accept a
+        caption.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to, type]
+              properties:
+                from:
+                  type: string
+                  example: "5511999999999"
+                to:
+                  type: string
+                  example: "5511888888888"
+                type:
+                  type: string
+                  enum: [image, video, document, audio, sticker]
+                link:
+                  type: string
+                  format: uri
+                  description: >
+                    Public https URL of the media file. Provide either `link`
+                    or `mediaId`, never both.
+                  example: https://example.com/photo.jpg
+                mediaId:
+                  type: string
+                  description: >
+                    Media handle returned by POST /api/v1/media. Provide either
+                    `link` or `mediaId`, never both.
+                  example: "1029384756102938"
+                caption:
+                  type: string
+                  description: Caption (image, video, document).
+                filename:
+                  type: string
+                  description: File name (document only).
+                replyTo:
+                  type: string
+                  description: >
+                    Optional wamid of a message to quote. The message is
+                    delivered as a quoted reply in WhatsApp.
+                  example: "wamid.HBg..."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: Message accepted and sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "202": { $ref: "#/components/responses/DeliveryIndeterminate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "422": { $ref: "#/components/responses/WindowClosed" }
+        "409": { $ref: "#/components/responses/IdempotencyInProgress" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/location:
+    post:
+      tags: [Messages]
+      summary: Send a location
+      operationId: sendLocation
+      description: Sends a static location pin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to, latitude, longitude]
+              properties:
+                from:
+                  type: string
+                  example: "5511999999999"
+                to:
+                  type: string
+                  example: "5511888888888"
+                latitude:
+                  type: number
+                  format: double
+                  minimum: -90
+                  maximum: 90
+                  example: -23.561414
+                longitude:
+                  type: number
+                  format: double
+                  minimum: -180
+                  maximum: 180
+                  example: -46.655881
+                name:
+                  type: string
+                  description: Name of the location.
+                  example: Avenida Paulista
+                address:
+                  type: string
+                  description: Street address of the location.
+                  example: "Av. Paulista, 1578, São Paulo, SP"
+                replyTo:
+                  type: string
+                  description: >
+                    Optional wamid of a message to quote. The message is
+                    delivered as a quoted reply in WhatsApp.
+                  example: "wamid.HBg..."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: Message accepted and sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "202": { $ref: "#/components/responses/DeliveryIndeterminate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "422": { $ref: "#/components/responses/WindowClosed" }
+        "409": { $ref: "#/components/responses/IdempotencyInProgress" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/contacts:
+    post:
+      tags: [Messages]
+      summary: Send contacts
+      operationId: sendContacts
+      description: >
+        Sends one or more contact cards. The `contacts` array follows the
+        WhatsApp Cloud API contacts object shape and is passed through to Meta
+        unchanged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to, contacts]
+              properties:
+                from:
+                  type: string
+                  example: "5511999999999"
+                to:
+                  type: string
+                  example: "5511888888888"
+                contacts:
+                  type: array
+                  minItems: 1
+                  description: >
+                    A non-empty array of WhatsApp Cloud API contact objects.
+                  items:
+                    type: object
+                  example:
+                    - name:
+                        formatted_name: "Maria Silva"
+                        first_name: "Maria"
+                        last_name: "Silva"
+                      phones:
+                        - phone: "+5511777777777"
+                          type: WORK
+                          wa_id: "5511777777777"
+                replyTo:
+                  type: string
+                  description: >
+                    Optional wamid of a message to quote. The message is
+                    delivered as a quoted reply in WhatsApp.
+                  example: "wamid.HBg..."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: Message accepted and sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "202": { $ref: "#/components/responses/DeliveryIndeterminate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "422": { $ref: "#/components/responses/WindowClosed" }
+        "409": { $ref: "#/components/responses/IdempotencyInProgress" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/reaction:
+    post:
+      tags: [Messages]
+      summary: React to a message
+      operationId: sendReaction
+      description: >
+        Reacts to a message with an emoji. An empty or omitted `emoji` removes
+        a reaction previously sent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to, messageId]
+              properties:
+                from:
+                  type: string
+                  example: "5511999999999"
+                to:
+                  type: string
+                  example: "5511888888888"
+                messageId:
+                  type: string
+                  description: The wamid of the message being reacted to.
+                  example: "wamid.HBg..."
+                emoji:
+                  type: string
+                  description: >
+                    The reaction emoji. An empty or omitted value removes a
+                    previous reaction.
+                  example: "👍"
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: Reaction accepted and sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "202": { $ref: "#/components/responses/DeliveryIndeterminate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "422": { $ref: "#/components/responses/WindowClosed" }
+        "409": { $ref: "#/components/responses/IdempotencyInProgress" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/interactive:
+    post:
+      tags: [Messages]
+      summary: Send an interactive message
+      operationId: sendInteractive
+      description: >
+        Sends an interactive message: reply buttons, a list, or a
+        call-to-action URL. The `interactive` object follows the WhatsApp Cloud
+        API interactive object shape and is passed through to Meta unchanged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to, interactive]
+              properties:
+                from:
+                  type: string
+                  example: "5511999999999"
+                to:
+                  type: string
+                  example: "5511888888888"
+                interactive:
+                  type: object
+                  description: >
+                    The WhatsApp Cloud API interactive object (type `button`,
+                    `list` or `cta_url`). Passed through to Meta unchanged.
+                  example:
+                    type: button
+                    body: { text: "Did your order arrive?" }
+                    action:
+                      buttons:
+                        - type: reply
+                          reply: { id: "yes", title: "Yes" }
+                        - type: reply
+                          reply: { id: "no", title: "No" }
+                replyTo:
+                  type: string
+                  description: >
+                    Optional wamid of a message to quote. The message is
+                    delivered as a quoted reply in WhatsApp.
+                  example: "wamid.HBg..."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201":
+          description: Interactive message accepted and sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "202": { $ref: "#/components/responses/DeliveryIndeterminate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "422": { $ref: "#/components/responses/WindowClosed" }
+        "409": { $ref: "#/components/responses/IdempotencyInProgress" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/typing:
+    post:
+      tags: [Messages]
+      summary: Show a typing indicator
+      operationId: sendTyping
+      description: >
+        Shows a typing indicator to the contact and marks the referenced
+        inbound message as read. The indicator clears after about 25 seconds,
+        or as soon as the next message is sent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, messageId]
+              properties:
+                from:
+                  type: string
+                  description: The connected number that received the message (E.164).
+                  example: "5511999999999"
+                messageId:
+                  type: string
+                  description: The wamid of the inbound message to respond to.
+                  example: "wamid.HBg..."
+      responses:
+        "200":
+          description: Typing indicator shown.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: typing
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "409": { $ref: "#/components/responses/MessageIdNotVisible" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/read:
+    post:
+      tags: [Messages]
+      summary: Mark an inbound message as read
+      operationId: markRead
+      description: >
+        Sends a read receipt for an inbound message, marking it as read in the
+        sender's WhatsApp app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, messageId]
+              properties:
+                from:
+                  type: string
+                  description: The connected number that received the message (E.164).
+                  example: "5511999999999"
+                messageId:
+                  type: string
+                  description: The inbound message wamid (Meta message id) to mark as read.
+                  example: "wamid.HBg..."
+      responses:
+        "200":
+          description: Read receipt sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: read
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "409": { $ref: "#/components/responses/MessageIdNotVisible" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/numbers:
+    get:
+      tags: [Numbers]
+      summary: List connected WhatsApp numbers
+      operationId: listNumbers
+      description: >
+        Lists the caller's connected WhatsApp numbers. Use this to discover
+        valid `from` values for the send endpoints.
+      responses:
+        "200":
+          description: Connected numbers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  numbers:
+                    type: array
+                    items: { $ref: "#/components/schemas/Number" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/send/messages:
+    get:
+      tags: [Messages]
+      summary: List recent messages
+      operationId: listMessages
+      description: >
+        Lists recent messages, sent and received. On the free plan, received
+        messages whose delivery is held by the plan limit (above 500 messages a
+        month) are left out until the account subscribes. Messages sent through
+        the API are always listed.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema: { type: string }
+          description: Filter by sender number (E.164).
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Recent messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: "#/components/schemas/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/send/messages/{id}:
+    get:
+      tags: [Messages]
+      summary: Get a single message
+      operationId: getMessage
+      description: >
+        Looks up a single message by its ZapClaw id. Answers 404 for a received
+        message whose delivery is held by the free plan limit, until the account
+        subscribes.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: ZapClaw message id.
+      responses:
+        "200":
+          description: The message.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/media:
+    post:
+      tags: [Media]
+      summary: Upload a media file
+      operationId: uploadMedia
+      description: >
+        Uploads a file and returns a `media_id` handle that can be sent with
+        POST /api/v1/send/media. Per-type size caps: image 5 MB, video 16 MB,
+        audio 16 MB, document 100 MB.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, from]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The media file to upload.
+                from:
+                  type: string
+                  description: A connected WhatsApp number, E.164 digits.
+                  example: "5511999999999"
+      responses:
+        "201":
+          description: File uploaded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  media_id:
+                    type: string
+                    example: "1029384756102938"
+                  mime_type:
+                    type: string
+                    example: image/jpeg
+                  file_size:
+                    type: integer
+                    description: Size of the uploaded file in bytes.
+                    example: 12345
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/media/{mediaId}:
+    get:
+      tags: [Media]
+      summary: Download received media
+      operationId: downloadMedia
+      description: >
+        Downloads the bytes of media received on an inbound WhatsApp message.
+        The response is the raw file streamed with the correct `Content-Type`.
+        Use the `media_url` provided in the `message.received` webhook payload,
+        which points at this endpoint.
+
+
+        Retry policy: treat `404` as temporary and `410` as final; on `429` and
+        `503` wait the seconds in `Retry-After`. Media stays downloadable for as
+        long as Meta keeps it (about 30 days), including after the message
+        itself has passed your plan's log retention window.
+
+
+        Documents download as attachments with `Content-Disposition` per RFC
+        6266: `filename` holds an ASCII fallback and `filename*` the exact name,
+        UTF-8 encoded. Other media types are served `inline`.
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema: { type: string }
+          description: The media id of a received media message.
+      responses:
+        "200":
+          description: The media file.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: >
+            No record of this media yet and no connected number to resolve it
+            with. Temporary: retry after a short delay.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: >
+            Meta refused the media: it aged out (~30 days), was deleted, or does
+            not belong to your account. Permanent, so do not retry.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429":
+          description: Meta is rate limiting us. Wait `Retry-After`, then retry.
+          headers:
+            Retry-After: { $ref: "#/components/headers/RetryAfter" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            A fault on our side. Retrying the same request is unlikely to help
+            more than once.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: >
+            Meta answered with an error. Retry later. The body carries
+            `meta_status`, the HTTP status Meta returned (a `5xx` means Meta
+            itself failed), and `meta_code` when Meta sent an error code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: Meta could not be reached. Wait `Retry-After`, then retry.
+          headers:
+            Retry-After: { $ref: "#/components/headers/RetryAfter" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [Media]
+      summary: Delete uploaded media
+      operationId: deleteMedia
+      description: >
+        Deletes a media file uploaded to Meta with POST /api/v1/media. Uploaded
+        media also expires on Meta's side automatically after about 30 days.
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema: { type: string }
+          description: The media id returned by POST /api/v1/media.
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+          description: A connected WhatsApp number (E.164).
+      responses:
+        "200":
+          description: Media deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Deleted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/templates:
+    get:
+      tags: [Templates]
+      summary: List approved templates
+      operationId: listTemplates
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema: { type: string }
+          description: Select which connected number's templates to return (E.164).
+      responses:
+        "200":
+          description: Approved templates available to send.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          description: Meta template id.
+                          example: "1234567890123456"
+                        name: { type: string }
+                        language: { type: string }
+                        category: { type: string }
+                        status: { type: string }
+                        bodyText: { type: string }
+                        pendingCategory:
+                          type: string
+                          nullable: true
+                          description: >
+                            Set when Meta has announced it will move this
+                            template to another category. Category determines
+                            price (in Brazil a MARKETING message costs about
+                            9.2x a UTILITY one), so a template that is cheap to
+                            send today becomes expensive once the change lands.
+                            Null when no change is pending.
+                          example: MARKETING
+                        categoryUpdateAt:
+                          type: string
+                          format: date-time
+                          nullable: true
+                          description: When the announced category change was recorded.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Templates]
+      summary: Create a message template
+      operationId: createTemplate
+      description: |
+        Creates a message template and submits it to Meta for review. A newly
+        created template is not sendable until Meta approves it.
+
+        Describe the template with the high-level fields below and ZapClaw
+        builds Meta's `components` array for you, including the example shapes
+        Meta requires, which differ by parameter format and are easy to get
+        wrong.
+
+        Alternatively, pass `components` directly in Meta's own format to bypass
+        the builder entirely. That is the original behaviour of this endpoint and
+        remains supported; when `components` is present every field below except
+        `name`, `category` and `language` is ignored.
+
+        **AUTHENTICATION templates are different.** Meta owns their structure, so
+        do not send `bodyText`, `headerText`, `footerText` or `buttons`; they are
+        ignored. Configure `codeExpirationMinutes`, `addSecurityRecommendation`
+        and `otpButtonText`; the body and the OTP button are generated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, name, category]
+              properties:
+                from:
+                  type: string
+                  description: A connected WhatsApp number, E.164 digits.
+                  example: "5511999999999"
+                accountIds:
+                  type: array
+                  items: { type: string, format: uuid }
+                  description: >
+                    Create the same template on several connected numbers at
+                    once. A template lives per WhatsApp Business Account, so each
+                    is a separate submission reviewed independently by Meta; the
+                    response reports which succeeded. Partial success is normal
+                    and is not rolled back.
+                name:
+                  type: string
+                  description: Template name (lowercase, digits and underscores).
+                  example: order_shipped
+                category:
+                  type: string
+                  enum: [UTILITY, MARKETING, AUTHENTICATION]
+                language:
+                  type: string
+                  description: Template language code.
+                  default: pt_BR
+                  example: pt_BR
+                bodyText:
+                  type: string
+                  description: >
+                    Body text. Variables are `{{1}}`, `{{2}}` (positional) or
+                    `{{order_id}}` (named), see `parameterFormat`. Meta rejects a
+                    variable at the very start or end of the text. Required
+                    unless the category is AUTHENTICATION.
+                  example: "Hi {{1}}, your order {{2}} has shipped."
+                headerText:
+                  type: string
+                  description: Text header. Only used when headerFormat is TEXT.
+                footerText:
+                  type: string
+                  description: Footer text. Footers cannot contain variables.
+                headerFormat:
+                  type: string
+                  enum: [TEXT, IMAGE, VIDEO, DOCUMENT]
+                  description: >
+                    Header type. Omit for no header. A media header requires
+                    `headerMediaUrl` (or `headerHandle`).
+                headerMediaUrl:
+                  type: string
+                  format: uri
+                  description: >
+                    Public https URL of the example asset Meta reviews. ZapClaw
+                    downloads it and uploads it to Meta for you.
+
+                    This file is only the approval sample: at send time you
+                    supply the real media in a `header` component parameter, so
+                    one approved template serves many different images.
+                  example: https://example.com/banner.jpg
+                headerHandle:
+                  type: string
+                  description: >
+                    A media handle already uploaded to Meta, used instead of
+                    `headerMediaUrl`.
+                parameterFormat:
+                  type: string
+                  enum: [POSITIONAL, NAMED]
+                  default: POSITIONAL
+                  description: >
+                    Whether variables are numbered (`{{1}}`) or named
+                    (`{{order_id}}`). A template must use one or the other
+                    throughout; mixing them is rejected, naming the offending
+                    token.
+                variableExamples:
+                  type: object
+                  additionalProperties: { type: string }
+                  description: >
+                    Sample value per variable, keyed by its number or name. Meta
+                    requires an example for every variable.
+                  example: { "1": "Ana", "2": "A-123" }
+                buttons:
+                  type: array
+                  maxItems: 10
+                  description: >
+                    Up to 10 buttons. A URL button may carry exactly one
+                    variable and Meta requires it at the very end of the URL.
+                    COPY_CODE takes no `text`: WhatsApp renders its own label,
+                    and its `example` is the sample code.
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                        enum: [QUICK_REPLY, URL, PHONE_NUMBER, COPY_CODE]
+                      text: { type: string, description: Button label. Not used by COPY_CODE. }
+                      url:
+                        type: string
+                        description: "URL button target, e.g. https://shop.com/order/{{1}}"
+                      urlExample:
+                        type: string
+                        description: Sample value for the URL variable.
+                      phoneNumber: { type: string, description: PHONE_NUMBER button target. }
+                      example:
+                        type: string
+                        description: Sample code for a COPY_CODE button.
+                messageSendTtlSeconds:
+                  type: integer
+                  description: >
+                    How long WhatsApp keeps trying to deliver. Meta enforces a
+                    range per category: AUTHENTICATION 30-900, UTILITY 30-43200,
+                    MARKETING 43200-2592000. `-1` means 30 days and is rejected
+                    for MARKETING.
+                  example: 600
+                codeExpirationMinutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 90
+                  default: 10
+                  description: "AUTHENTICATION only: how long the code stays valid."
+                addSecurityRecommendation:
+                  type: boolean
+                  default: true
+                  description: >
+                    AUTHENTICATION only: whether Meta's "do not share this code"
+                    line is included.
+                otpButtonText:
+                  type: string
+                  description: "AUTHENTICATION only: label of the copy-code button."
+                components:
+                  type: array
+                  minItems: 1
+                  description: >
+                    Raw Meta components. Bypasses the builder entirely; supply
+                    this only if you are constructing Meta's format yourself.
+                  items:
+                    type: object
+      responses:
+        "201":
+          description: Template created and submitted for Meta review.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template:
+                    type: object
+                    properties:
+                      id: { type: string, example: "1234567890123456" }
+                      status: { type: string, example: PENDING }
+                      category: { type: string, example: UTILITY }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/TemplateNameUnavailable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/templates/replicable:
+    get:
+      tags: [Templates]
+      summary: List templates that can be copied to a number
+      operationId: listReplicableTemplates
+      description: >
+        Templates that exist on your other connected numbers but not yet on the
+        target one. A template lives per WhatsApp Business Account, so each
+        number needs its own copy: this is what a newly connected number is
+        missing.
+      parameters:
+        - name: targetAccountId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+          description: The number that would receive the copies.
+      responses:
+        "200":
+          description: Templates available to copy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  targetAccountId: { type: string, format: uuid, nullable: true }
+                  templates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        category: { type: string }
+                        language: { type: string }
+                        bodyText: { type: string, nullable: true }
+                        hasMedia:
+                          type: boolean
+                          description: >
+                            Whether the template carries a media header. Media is
+                            re-uploaded during replication, which needs the source
+                            URL to still be stored.
+                        sourceAccountId: { type: string, format: uuid }
+                        sourcePhoneNumber: { type: string, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/v1/send/templates/replicate:
+    post:
+      tags: [Templates]
+      summary: Copy templates onto another number
+      operationId: replicateTemplates
+      description: |
+        Recreates the named templates on the target number's WhatsApp Business
+        Account, from the copy stored on another of your numbers.
+
+        Meta reviews each copy independently, so this returns a per-template
+        result rather than failing as a whole. A media header is re-uploaded to
+        the target account: Meta's media handles are single-use and account
+        scoped, which requires the original source URL to still be on file; a
+        template created before ZapClaw stored that URL reports an error and must
+        be recreated by hand.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetAccountId, names]
+              properties:
+                targetAccountId:
+                  type: string
+                  format: uuid
+                  description: The number that receives the copies.
+                names:
+                  type: array
+                  minItems: 1
+                  items: { type: string }
+                  description: Template names to copy.
+      responses:
+        "201":
+          description: Per-template outcome. Check each entry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        ok: { type: boolean }
+                        error: { type: string, nullable: true }
+                        template: { type: object, nullable: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/templates/recreate:
+    post:
+      tags: [Templates]
+      summary: Replace a template that is still under review
+      operationId: recreateTemplate
+      description: |
+        Meta forbids editing a template while its status is PENDING: only
+        APPROVED, REJECTED and PAUSED templates can be edited. If you can wait,
+        let the review finish and edit it in place with
+        `POST /api/v1/send/templates/{id}`, keeping its name. To change it now,
+        this replaces it with a new template under a new name.
+
+        The replacement cannot keep the old name. After a template is deleted,
+        Meta refuses its name and language for hours even when it was still
+        PENDING, and for 30 days when it was approved. So `newName` is required
+        and must differ from
+        `name`, and anything that sends the template by name has to switch to the
+        new one.
+
+        The new template is submitted first, and the old one is deleted only once
+        Meta has accepted the replacement, so a refused submission leaves the old
+        template exactly as it was. Deleting the old one removes every language
+        under its name.
+
+        For an APPROVED template, use `POST /api/v1/send/templates/{id}` instead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, newName, category]
+              description: Same fields as POST /api/v1/send/templates, plus newName.
+              properties:
+                from: { type: string, example: "5511999999999" }
+                name:
+                  type: string
+                  example: order_shipped
+                  description: The template to replace.
+                newName:
+                  type: string
+                  example: order_shipped_v2
+                  description: Name of the replacement. Must differ from `name`.
+                category:
+                  type: string
+                  enum: [UTILITY, MARKETING, AUTHENTICATION]
+                bodyText: { type: string }
+      responses:
+        "201":
+          description: >
+            The replacement was submitted. `replaced.deleted` says whether the old
+            template was deleted; when it is `false`, Meta refused the delete, the
+            old template is still on Meta, and `replaced.error` carries the reason.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template: { type: object }
+                  replaced:
+                    type: object
+                    properties:
+                      name: { type: string, example: order_shipped }
+                      deleted: { type: boolean, example: true }
+                      error: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/QuotaExceeded" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "409": { $ref: "#/components/responses/TemplateNameUnavailable" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/send/templates/{id}:
+    post:
+      tags: [Templates]
+      summary: Edit a message template
+      operationId: editTemplate
+      description: |
+        Edits an existing template in place, identified by its Meta template id
+        (the `id` field returned by GET /api/v1/send/templates). The template
+        keeps its id and its history, unlike `/templates/recreate`, which
+        replaces it with a new template under a new name.
+
+        Takes the same friendly fields as template creation, so a media header,
+        an AUTHENTICATION or OTP template, COPY_CODE and dynamic URL buttons,
+        TTL and named variables are all editable. A raw `components` array is
+        still accepted and bypasses the builder, as before.
+
+        Only the fields you send are changed. Meta replaces a template's
+        components wholesale, so ZapClaw merges your fields over the ones the
+        template already has: sending only `bodyText` leaves the header, the
+        footer and the buttons exactly as they were. To remove a field, send it
+        as `null`.
+
+        What Meta does and does not allow:
+
+        - Editable only while the template is APPROVED, REJECTED or PAUSED. A
+          PENDING one answers 409 with code `TEMPLATE_IN_REVIEW`, and repeating
+          the request will not change that. Wait for the review to finish (poll
+          GET /api/v1/send/templates or watch the
+          `account.message_template_status_update` webhook), or replace it under
+          a new name with `POST /api/v1/send/templates/recreate`. Never delete it
+          to reuse the name.
+        - An approved template can be edited once per 24 hours and 10 times per
+          30 days. Rejected and paused templates are unlimited.
+        - `name` and `language` cannot be changed at all. Sending a different
+          value answers 400.
+        - `category` can only be changed while the template is REJECTED, where
+          it is the fix for an INCORRECT_CATEGORY rejection. It is ignored on an
+          approved or paused template.
+
+        Editing an approved template does not send it back to review: Meta
+        re-approves it automatically unless it fails. ZapClaw reads the status
+        back from Meta after the edit rather than assuming one.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: The Meta template id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >
+                At least one of category, components or a content field is
+                required. Same field names as POST /api/v1/send/templates.
+              properties:
+                from:
+                  type: string
+                  description: >
+                    Optional and ignored. The template id already identifies the
+                    account that owns it. Accepted so existing calls keep working.
+                  example: "5511999999999"
+                category:
+                  type: string
+                  description: >
+                    New template category. Only applied while the template is
+                    REJECTED; silently ignored otherwise, because Meta refuses
+                    to change the category of an approved template.
+                  enum: [UTILITY, MARKETING, AUTHENTICATION]
+                bodyText: { type: string }
+                headerText: { type: string }
+                footerText: { type: string }
+                buttons:
+                  type: array
+                  items: { type: object }
+                variableExamples: { type: object }
+                parameterFormat:
+                  type: string
+                  enum: [POSITIONAL, NAMED]
+                headerFormat:
+                  type: string
+                  enum: [TEXT, IMAGE, VIDEO, DOCUMENT]
+                headerMediaUrl:
+                  type: string
+                  description: Public https URL of the example file Meta reviews.
+                messageSendTtlSeconds: { type: integer }
+                components:
+                  type: array
+                  description: >
+                    Raw Meta components. Bypasses the builder and replaces the
+                    template's components as given, so it must be complete.
+                  items:
+                    type: object
+      responses:
+        "200":
+          description: Template updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: boolean
+                    example: true
+                    description: Kept for integrations written before `template` existed.
+                  template:
+                    type: object
+                    description: The template as ZapClaw now holds it, after reading Meta back.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AccountRestricted" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: >
+            The template is still in review, so Meta will not edit it, and
+            repeating the request will not change that. Wait for the review, or
+            replace it under a new name with /templates/recreate.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  code: { type: string, example: TEMPLATE_IN_REVIEW }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+    delete:
+      tags: [Templates]
+      summary: Delete a message template
+      operationId: deleteTemplate
+      description: |
+        Deletes a template by its name, in every language it has.
+
+        The name is not free afterwards: Meta refuses a new template with the
+        same name and language for hours even if the deleted one was PENDING,
+        and for 30 days if it was approved. Never delete a template to
+        resubmit it under the same name. To change one still in review, use
+        `POST /api/v1/send/templates/recreate`, which submits the new version
+        under a new name before deleting the old one.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+          description: >
+            The template name. The path segment is the template name, not the
+            Meta template id.
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+          description: A connected WhatsApp number (E.164).
+      responses:
+        "200":
+          description: Template deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Deleted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/profile:
+    get:
+      tags: [Profile]
+      summary: Read the business profile
+      operationId: getProfile
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+          description: A connected WhatsApp number (E.164).
+      responses:
+        "200":
+          description: The business profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile: { $ref: "#/components/schemas/BusinessProfile" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+    patch:
+      tags: [Profile]
+      summary: Update the business profile
+      operationId: updateProfile
+      description: >
+        Updates the business profile text fields. Provide at least one field
+        beyond `from`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from]
+              properties:
+                from:
+                  type: string
+                  example: "5511999999999"
+                about:
+                  type: string
+                  example: Open Monday to Friday, 9am to 6pm
+                address:
+                  type: string
+                description:
+                  type: string
+                email:
+                  type: string
+                websites:
+                  type: array
+                  items: { type: string, format: uri }
+                vertical:
+                  type: string
+                  description: Business industry vertical (Meta enum).
+      responses:
+        "200":
+          description: Profile updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Updated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/profile/name:
+    post:
+      tags: [Profile]
+      summary: Submit a display name
+      operationId: updateName
+      description: >
+        Submits a new display name for a connected number. The change is
+        reviewed by Meta before it takes effect.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, name]
+              properties:
+                from:
+                  type: string
+                  example: "5511999999999"
+                name:
+                  type: string
+                  example: My Business
+      responses:
+        "200":
+          description: Display name change submitted for Meta review.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submitted: { type: boolean, example: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/profile/photo:
+    post:
+      tags: [Profile]
+      summary: Set the profile picture
+      operationId: updatePhoto
+      description: >
+        Sets the business profile picture. The image file is capped at 5 MB.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, from]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The profile picture image.
+                from:
+                  type: string
+                  description: A connected WhatsApp number, E.164 digits.
+                  example: "5511999999999"
+      responses:
+        "200":
+          description: Profile picture updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Updated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/block:
+    get:
+      tags: [Block]
+      summary: List blocked users
+      operationId: listBlocked
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+          description: A connected WhatsApp number (E.164).
+      responses:
+        "200":
+          description: Blocked users.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blocked:
+                    type: array
+                    items:
+                      type: object
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+    post:
+      tags: [Block]
+      summary: Block users
+      operationId: blockUsers
+      description: >
+        Blocks one or more users on a connected number. Meta only allows
+        blocking a user who has messaged the business within the last 24 hours.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BlockRequest" }
+      responses:
+        "200":
+          description: Block result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BlockResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+    delete:
+      tags: [Block]
+      summary: Unblock users
+      operationId: unblockUsers
+      description: Unblocks one or more previously blocked users on a connected number.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BlockRequest" }
+      responses:
+        "200":
+          description: Unblock result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BlockResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/qr-codes:
+    get:
+      tags: [QR Codes]
+      summary: List QR codes
+      operationId: listQrCodes
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+          description: A connected WhatsApp number (E.164).
+      responses:
+        "200":
+          description: QR codes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qrCodes:
+                    type: array
+                    items: { $ref: "#/components/schemas/QrCode" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+    post:
+      tags: [QR Codes]
+      summary: Create a QR code
+      operationId: createQrCode
+      description: Creates a QR code (managed link) for a connected number.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, prefilledMessage]
+              properties:
+                from:
+                  type: string
+                  example: "5511999999999"
+                prefilledMessage:
+                  type: string
+                  description: The message text prefilled when a user opens the link.
+                  example: Hi, I would like to know more
+                imageFormat:
+                  type: string
+                  enum: [PNG, SVG]
+                  default: PNG
+      responses:
+        "201":
+          description: QR code created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qrCode: { $ref: "#/components/schemas/QrCode" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/qr-codes/{code}:
+    delete:
+      tags: [QR Codes]
+      summary: Delete a QR code
+      operationId: deleteQrCode
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+          description: The QR code identifier.
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+          description: A connected WhatsApp number (E.164).
+      responses:
+        "200":
+          description: QR code deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Deleted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/automation:
+    get:
+      tags: [Automation]
+      summary: Read conversational automation
+      operationId: getAutomation
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+          description: A connected WhatsApp number (E.164).
+      responses:
+        "200":
+          description: Conversational automation config.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  automation: { $ref: "#/components/schemas/Automation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+    post:
+      tags: [Automation]
+      summary: Update conversational automation
+      operationId: updateAutomation
+      description: >
+        Updates the conversational automation config. Provide at least one
+        field beyond `from`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from]
+              properties:
+                from:
+                  type: string
+                  example: "5511999999999"
+                enableWelcomeMessage:
+                  type: boolean
+                  description: >
+                    Whether the welcome message is shown when a customer opens
+                    a new conversation.
+                commands:
+                  type: array
+                  description: Slash commands.
+                  items:
+                    type: object
+                    properties:
+                      command_name: { type: string }
+                      command_description: { type: string }
+                prompts:
+                  type: array
+                  maxItems: 4
+                  description: Ice breaker prompts (maximum 4).
+                  items: { type: string }
+      responses:
+        "200":
+          description: Automation config updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Updated" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+  /api/v1/analytics/pricing:
+    get:
+      tags: [Analytics]
+      summary: Pricing analytics
+      operationId: getPricingAnalytics
+      description: >
+        Returns Meta's per-message pricing analytics for a time window. Use it
+        alongside the `pricing` and `conversation` objects on the
+        message.status webhook to reconcile billing.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string }
+          description: A connected WhatsApp number (E.164).
+        - name: start
+          in: query
+          required: true
+          schema: { type: integer }
+          description: Start of the window, a Unix timestamp (epoch seconds).
+        - name: end
+          in: query
+          required: true
+          schema: { type: integer }
+          description: End of the window, a Unix timestamp (epoch seconds).
+        - name: granularity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [DAILY, MONTHLY]
+            default: DAILY
+      responses:
+        "200":
+          description: Pricing analytics.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analytics:
+                    type: object
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+        "503": { $ref: "#/components/responses/Unreachable" }
+
+components:
+  headers:
+    RetryAfter:
+      description: >
+        Seconds to wait before retrying, from 1 to 3600. Meta's own value when
+        it sends one, otherwise 5.
+      schema: { type: integer, minimum: 1, maximum: 3600 }
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: >
+        API key created in the ZapClaw dashboard. Format: zc_live_ followed
+        by 32 random characters. Shown only once, on creation.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, maxLength: 255 }
+      description: >
+        A value you choose that identifies this send. Repeating the same request
+        with the same key inside 10 minutes returns the first call's answer
+        instead of sending a second message, with an `Idempotency-Replayed: true`
+        header on the replay. Generate it once, before the first attempt, and
+        reuse it on every retry. Omitting it changes nothing.
+
+  schemas:
+    Message:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        direction: { type: string, enum: [inbound, outbound] }
+        to: { type: string, description: Recipient number }
+        type: { type: string, example: text }
+        templateName: { type: string, nullable: true }
+        content: { type: string, nullable: true }
+        wamid: { type: string, nullable: true, description: Meta message id }
+        status:
+          type: string
+          enum: [pending, sent, delivered, read, failed, received, indeterminate]
+          description: >
+            `indeterminate` is a send Meta answered with a failure that does not
+            rule out delivery. It carries no wamid, so no delivery status will
+            ever resolve it, and it must not be counted as a failure.
+        errorMessage: { type: string, nullable: true }
+        sentAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    MessageResponse:
+      type: object
+      properties:
+        message: { $ref: "#/components/schemas/Message" }
+
+    IndeterminateResponse:
+      type: object
+      description: >
+        The answer to a send Meta neither accepted nor refused. Not a success and
+        not a failure: the message may have been delivered and may not have been.
+      properties:
+        message: { $ref: "#/components/schemas/Message" }
+        delivery:
+          type: string
+          enum: [unknown]
+        code:
+          type: string
+          enum: [DELIVERY_INDETERMINATE]
+        meta_code:
+          type: integer
+          example: 131000
+        warning:
+          type: string
+          description: Meta's own words, plus what repeating the send would risk.
+
+    Number:
+      type: object
+      properties:
+        phoneNumberId: { type: string, description: Meta phone number id }
+        displayPhoneNumber: { type: string, description: The number in display format }
+        displayName: { type: string, description: Verified business display name }
+        label: { type: string, nullable: true, description: Custom label set in the dashboard }
+        qualityRating: { type: string, description: "Meta quality rating: GREEN, YELLOW or RED" }
+        status: { type: string, example: active }
+
+    Updated:
+      type: object
+      description: Confirms a resource was updated.
+      properties:
+        updated:
+          type: boolean
+          example: true
+
+    Deleted:
+      type: object
+      description: Confirms a resource was deleted.
+      properties:
+        deleted:
+          type: boolean
+          example: true
+
+    BusinessProfile:
+      type: object
+      properties:
+        about: { type: string }
+        address: { type: string }
+        description: { type: string }
+        email: { type: string }
+        websites:
+          type: array
+          items: { type: string, format: uri }
+        vertical: { type: string, description: Business industry vertical (Meta enum) }
+        profile_picture_url: { type: string, format: uri }
+
+    BlockRequest:
+      type: object
+      required: [from, numbers]
+      properties:
+        from:
+          type: string
+          description: A connected WhatsApp number, E.164 digits.
+          example: "5511999999999"
+        numbers:
+          type: array
+          minItems: 1
+          description: Recipient numbers (E.164) to block or unblock.
+          items: { type: string }
+          example: ["5511777777777"]
+
+    BlockResult:
+      type: object
+      description: >
+        The raw Meta block/unblock result, passed through unchanged.
+      properties:
+        result:
+          type: object
+
+    QrCode:
+      type: object
+      properties:
+        code:
+          type: string
+          description: The QR code identifier.
+          example: "4O4ABCDEFG123"
+        prefilled_message:
+          type: string
+          example: Hi, I would like to know more
+        deep_link_url:
+          type: string
+          format: uri
+          description: The wa.me managed link.
+          example: "https://wa.me/message/4O4ABCDEFG123"
+        qr_image_url:
+          type: string
+          format: uri
+          description: URL of the rendered QR image.
+
+    Automation:
+      type: object
+      properties:
+        enable_welcome_message:
+          type: boolean
+        commands:
+          type: array
+          items:
+            type: object
+            properties:
+              command_name: { type: string }
+              command_description: { type: string }
+        prompts:
+          type: array
+          description: Ice breaker prompts (maximum 4).
+          items: { type: string }
+
+    Error:
+      type: object
+      description: >
+        Standard error body returned with every non-2xx response.
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+        meta_code:
+          type: integer
+          description: >
+            Present when the failure originated at the WhatsApp Cloud API. This
+            is Meta's own error code, forwarded so you can branch on it without
+            parsing the message. Example: `131047` (24-hour window closed).
+          example: 131047
+        meta_status:
+          type: integer
+          description: >
+            Present on a `502` from the media download: the HTTP status Meta
+            returned, so a Meta outage (`5xx`) can be told apart from an
+            unexpected refusal (`4xx`).
+          example: 500
+      example:
+        error: "from, to and text are required"
+
+  responses:
+    BadRequest:
+      description: Invalid request, or unknown "from" number.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: The requested resource was not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PayloadTooLarge:
+      description: The uploaded file exceeds the size cap for its type.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    QuotaExceeded:
+      description: |
+        The account has used every message included in its plan, and that plan
+        does not bill overage, so sending is paused until the billing period
+        resets or the plan is upgraded.
+
+        This is the free plan's limit. Inbound messages are still received and
+        stored, but new ones above the allowance are held: not sent to your
+        webhook and left out of `GET /api/v1/send/messages` until the account
+        subscribes. Paid plans bill overage instead and never hold inbound
+        messages. Only outbound sending is refused with this status.
+
+        The body carries `code: "message_quota_exceeded"` alongside `used` and
+        `included`, so a client can show the customer how far over they are
+        without parsing the message.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    DeliveryIndeterminate:
+      description: |
+        Meta reported a failure that does not rule out delivery, so the message
+        may have arrived and may not have. Most often `(#131000) Something went
+        wrong`, which Meta has been observed returning for messages it had
+        already delivered.
+
+        This is not a success and not a failure. No wamid was issued, so no
+        delivery status will ever resolve it, and the message is stored with
+        status `indeterminate`. Repeating the send can deliver it twice: repeat
+        it only with the same `Idempotency-Key`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/IndeterminateResponse" }
+    IdempotencyInProgress:
+      description: >
+        Another call carrying this `Idempotency-Key` is still running, so its
+        answer does not exist yet. Nothing was sent. Retry in a moment. The body
+        carries `code: "IDEMPOTENCY_IN_PROGRESS"`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TemplateNameUnavailable:
+      description: >
+        A new template cannot take this name and language. Meta blocks them after
+        the template that held them is deleted, for hours even if it was PENDING
+        and for 30 days if it was approved, and recreate refuses to reuse the
+        name it replaces for the same reason. Nothing was created or deleted.
+        Retrying does not help, whatever Meta's own error text says: submit it
+        under a different name. The body carries
+        `code: "TEMPLATE_NAME_UNAVAILABLE"`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Rate limit exceeded (1000 requests / 15 minutes per key).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadGateway:
+      description: >
+        ZapClaw could not make sense of Meta's answer at all. Rare: a Meta
+        failure that arrives with an HTTP status of its own is answered with
+        503, not this.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    MessageIdNotVisible:
+      description: |
+        Meta refused this message id, so the read receipt or typing indicator
+        could not be attached to it.
+
+        The response says only that Meta will not resolve the id. That can be an
+        inbound wamid Meta has not made queryable yet, or an id that does not
+        belong to this number, and the two cannot be told apart from here.
+
+        The body carries `code: "MESSAGE_ID_NOT_VISIBLE"`, which is the field to
+        branch on rather than the message text. Nothing was sent, and the
+        indicator is cosmetic. Some ids start working a moment later and some
+        never do, so cap any retry instead of looping; if the same id is refused
+        every time, check that it is an inbound wamid this number received.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: >-
+              Meta does not recognise this message id, so nothing was sent. It
+              may become readable shortly, or never.
+            code: MESSAGE_ID_NOT_VISIBLE
+    AccountRestricted:
+      description: |
+        Meta has taken away what this request does. The message says what, and
+        the body carries `code: "ACCOUNT_RESTRICTED"`.
+
+        Either the whole account is blocked: Meta disabled the WhatsApp
+        Business Account this number belongs to, or the account is no longer
+        linked to ZapClaw. Every send and every template write is refused
+        until Meta reinstates the account or the number is reconnected.
+
+        Or Meta restricted one capability until a date, and only that is
+        refused: template sends under a block on starting conversations,
+        free-form sends under a block on replying to customers, and new
+        UTILITY templates under a block on those. The message names the date,
+        for example "cannot send template messages until
+        2026-10-20T12:00:00Z", and the refusal ends by itself when it passes.
+        A restriction on something else (adding phone numbers, calling)
+        refuses nothing.
+
+        Read endpoints keep working throughout.
+
+        This status is also returned when the key belongs to a client that has
+        been archived in a ZapClaw agency account. In that case every endpoint
+        is refused, not just sending, and the key works again as soon as the
+        client is restored. The two cases are distinguished by the message.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: >-
+              This WhatsApp account is restricted by Meta and cannot send
+              messages: POLICY_VIOLATION
+            code: ACCOUNT_RESTRICTED
+    WindowClosed:
+      description: |
+        The 24-hour customer service window with this contact is closed.
+
+        WhatsApp only allows free-form messages within 24 hours of the
+        contact's last inbound message. Outside that window, send an approved
+        template (`POST /api/v1/send/template`) to reopen the conversation.
+        Template sends are never window-bound.
+
+        The response carries `meta_code: 131047`.
+
+        One other refusal shares this status and is told apart by `code`:
+        `IDEMPOTENCY_KEY_REUSED` means this `Idempotency-Key` was already used
+        for a different request. Nothing was sent, because a key that has already
+        answered for one message must not answer for another.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: >-
+              The 24-hour customer service window with this contact is closed.
+              Send an approved template to reopen the conversation.
+            meta_code: 131047
+    Unreachable:
+      description: |
+        Meta is unavailable. One of three things happened, none of them a
+        problem with your request:
+
+        - ZapClaw could not reach the Meta API at all, after automatic retries.
+        - Meta answered that it is temporarily down and asked for the call to be
+          repeated (its error carries `is_transient`). ZapClaw retried before
+          answering.
+        - Meta refused with a server error that names the failure, such as its
+          own "service unavailable" (`meta_code: 131016`).
+
+        Retry the call. In none of the three is there any sign Meta took the
+        message: the failure that leaves delivery in doubt is answered `202`
+        with `delivery: "unknown"`, never this.
+
+        On a send carrying an `Idempotency-Key` there is a fourth, told apart by
+        `code: "IDEMPOTENCY_UNAVAILABLE"`: ZapClaw could not check the key, so it
+        refused to send rather than risk a duplicate. Retry with the same key.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

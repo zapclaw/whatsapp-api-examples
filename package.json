@@ -1,0 +1,28 @@
+{
+  "name": "whatsapp-api-examples",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Examples for the ZapClaw WhatsApp API: webhook signature verification, sending messages, and a Postman collection.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zapclaw/whatsapp-api-examples.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test webhook-signature/node/test/fixture.test.js webhook-signature/node/test/verify.test.js send/test/examples.test.js postman/test/postman.test.js",
+    "test:python": "python -m unittest discover -s webhook-signature/python/tests -v",
+    "test:php": "php webhook-signature/php/test.php",
+    "fixture": "node webhook-signature/fixture/generate.js",
+    "fixture:check": "node webhook-signature/fixture/generate.js --check",
+    "webhook": "node webhook-signature/node/server.js",
+    "postman": "node postman/build-collection.js",
+    "postman:check": "node postman/check-collection.js",
+    "postman:cross-check": "node postman/check-collection.js --cross-check"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

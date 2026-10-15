@@ -1,0 +1,2 @@
+# verify.py needs nothing beyond the standard library. Flask is only for flask_app.py.
+flask>=2.0

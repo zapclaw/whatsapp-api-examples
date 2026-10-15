@@ -1,0 +1,46 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          python -m pip install -r webhook-signature/python/requirements.txt -r send/python/requirements.txt
+
+      - name: Generated files are up to date
+        run: |
+          node webhook-signature/fixture/generate.js --check
+          node postman/build-collection.js --check
+          node postman/check-collection.js --cross-check
+
+      # Also runs the Python, PHP and curl send examples against a local mock.
+      - name: Node.js tests
+        run: npm test
+
+      - name: Python tests
+        run: python -m unittest discover -s webhook-signature/python/tests -v
+
+      # PHP comes preinstalled on GitHub's Ubuntu runners.
+      - name: PHP tests
+        run: |
+          php --version
+          php webhook-signature/php/test.php

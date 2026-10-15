@@ -1,0 +1,12 @@
+{
+  "description": "A message.received delivery signed the way ZapClaw signs it. Test values only: the body is payload.json, byte for byte, and the signature covers exactly those bytes.",
+  "secret": "whsec_example_fixture_secret_not_for_production",
+  "bodyFile": "payload.json",
+  "bodyBytes": 536,
+  "headers": {
+    "Content-Type": "application/json",
+    "X-ZapClaw-Event": "message.received",
+    "X-ZapClaw-Delivery": "3f6c1a52-8d4e-4b7a-9c21-5e0f7d9b2a14",
+    "X-ZapClaw-Signature": "sha256=77b7d63452f8e6b0381240c5b029d1e76b0c6dc7954fb229bb0c5a29b390a9d8"
+  }
+}

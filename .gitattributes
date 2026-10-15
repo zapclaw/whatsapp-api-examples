@@ -1,0 +1,7 @@
+# LF everywhere: the shell scripts break with CRLF ("bad interpreter"), and the
+# generated files are compared byte for byte.
+* text=auto eol=lf
+*.sh text eol=lf
+
+# The fixture body is signed byte for byte. Git must never touch its bytes.
+webhook-signature/fixture/payload.json -text
